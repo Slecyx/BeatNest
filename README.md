@@ -30,34 +30,34 @@ pip install requests
 pip install pynput
 pip install lyricsgenius
 
-    ytmusicapi: Used to fetch music data from YouTube Music API.
+  -ytmusicapi: Used to fetch music data from YouTube Music API.
 
-    yt-dlp: Used to download music from YouTube videos.
+  -yt-dlp: Used to download music from YouTube videos.
 
-    python-vlc: Integrates the VLC media player library with Python.
+  -python-vlc: Integrates the VLC media player library with Python.
 
-    Pillow: Required for image processing.
+  -Pillow: Required for image processing.
 
-    requests: Used for making HTTP requests to fetch data from the internet.
+  -requests: Used for making HTTP requests to fetch data from the internet.
 
-    pynput: Used for keyboard listening and command management.
+  -pynput: Used for keyboard listening and command management.
 
-    lyricsgenius: Fetches song lyrics using the Genius API.
+  -lyricsgenius: Fetches song lyrics using the Genius API.
 
 2. VLC Player and FFP (VLC for Python)
 
 The VLC media player library needs to be installed on your computer. You can download and install VLC from its official website. Additionally, you should configure the necessary FFP (FFmpeg) support files for VLC’s Python module.
 
-    VLC Media Player: The application will use VLC for music playback, so make sure VLC is installed on your computer.
+  -VLC Media Player: The application will use VLC for music playback, so make sure VLC is installed on your computer.
 
-    FFMPEG: Provides audio/video processing support for VLC. This module should be installed along with VLC.
+  -FFMPEG: Provides audio/video processing support for VLC. This module should be installed along with VLC.
 
 Step-by-Step Installation:
 
-    Download and Install VLC: Download and install VLC on your computer from the official site.
+  -Download and Install VLC: Download and install VLC on your computer from the official site.
 
-    Install Python Libraries: Run the above pip install commands in your terminal to install the required Python libraries.
+  -Install Python Libraries: Run the above pip install commands in your terminal to install the required Python libraries.
 
-    Configure VLC Python Module: If you haven't already, use pip install python-vlc to install the VLC Python module.
+  -Configure VLC Python Module: If you haven't already, use pip install python-vlc to install the VLC Python module.
 
-    Run the Application: Once all the steps are completed, you can run the BeatNest application!
+  -Run the Application: Once all the steps are completed, you can run the BeatNest application!
