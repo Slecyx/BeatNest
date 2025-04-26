@@ -22,13 +22,13 @@ In order to run the BeatNest application, you will need to install the following
 
 To install the necessary Python libraries, simply run the following commands in your terminal or command prompt:
 
-pip install ytmusicapi
-pip install yt-dlp
-pip install python-vlc
-pip install pillow
-pip install requests
-pip install pynput
-pip install lyricsgenius
+*pip install ytmusicapi
+*pip install yt-dlp
+*pip install python-vlc
+*pip install pillow
+*pip install requests
+*pip install pynput
+*pip install lyricsgenius
 
   -ytmusicapi: Used to fetch music data from YouTube Music API.
 
