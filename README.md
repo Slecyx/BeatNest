@@ -61,3 +61,33 @@ Step-by-Step Installation:
   -Configure VLC Python Module: If you haven't already, use pip install python-vlc to install the VLC Python module.
 
   -Run the Application: Once all the steps are completed, you can run the BeatNest application!
+
+3. FFmpeg Kurulumu:
+
+FFmpeg'in BeatNest uygulamasında kullanılabilmesi için önce sisteminize FFmpeg kurmanız gerekiyor. İşte adımlar:
+Linux (Ubuntu/Debian):
+
+  -FFmpeg’i yüklemek için terminalde şu komutu kullanın:
+
+sudo apt update
+sudo apt install ffmpeg
+
+FFmpeg’in yüklendiğini doğrulamak için:
+
+    ffmpeg -version
+
+Windows:
+
+  -FFmpeg'i indirin.
+
+  -İndirdiğiniz zip dosyasını çıkarın (örneğin C:\ffmpeg).
+
+  -FFmpeg’i C:\ffmpeg\bin klasöründe bulacaksınız, bu klasörü sistemin PATH ortam değişkenine ekleyin:
+
+  -Bilgisayarım > Sağ tık > Özellikler > Gelişmiş sistem ayarları > Ortam değişkenleri.
+
+  -PATH değişkenine C:\ffmpeg\bin yolunu ekleyin.
+
+  -FFmpeg’in doğru yüklendiğini kontrol edin:
+
+ffmpeg -version
