@@ -1,0 +1,9 @@
+tkinter==8.6.12
+ytmusicapi==0.11.0
+yt-dlp==2023.3.4
+python-vlc==3.0.1211
+Pillow==8.4.0
+requests==2.26.0
+pynput==1.7.4
+lyricsgenius==3.0.1
+pyperclip==1.8.2
