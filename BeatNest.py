@@ -175,20 +175,268 @@ class BeatNest:
         self.total_listening_time = data.get("total_time", 0)
 
     def show_loading_screen(self):
-        """Display the loading screen with animated progress bar."""
+        """Display an elegant animated loading screen."""
         self.style = ttk.Style()
         self._configure_loading_styles()
+        
+        # Main loading frame
         self.loading_frame = ttk.Frame(self.window, style="Loading.TFrame")
         self.loading_frame.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(self.loading_frame, text="BeatNest", style="Loading.TLabel").pack(expand=True)
-        self.loading_progress = ttk.Progressbar(
-            self.loading_frame,
-            style="Loading.Horizontal.TProgressbar",
-            mode="determinate",
-            length=300
+        
+        # Canvas for logo animation 
+        canvas_size = 200
+        self.logo_canvas = tk.Canvas(
+            self.loading_frame, 
+            width=canvas_size,
+            height=canvas_size,
+            bg=COLORS["dark"]["bg"],
+            highlightthickness=0
         )
-        self.loading_progress.pack(pady=(0, 50))
+        self.logo_canvas.place(relx=0.5, rely=0.4, anchor="center")
+        
+        # Rotating logo animation
+        self.logo_items = []
+        colors = ["#1DB954", "#1ED760", "#23E268"]  # Spotify green shades
+        for i in range(3):
+            size = canvas_size - (i * 40)
+            item = self.logo_canvas.create_arc(
+                20+(i*20), 20+(i*20),
+                size-(i*20), size-(i*20),
+                start=0, extent=300,
+                fill=colors[i]
+            )
+            self.logo_items.append(item)
+        
+        # App title
+        title_frame = ttk.Frame(self.loading_frame, style="Loading.TFrame")
+        title_frame.place(relx=0.5, rely=0.65, anchor="center")
+        
+        # Title with custom font and transparent background
+        title = tk.Label(
+            title_frame,
+            text="BeatNest",
+            font=("Helvetica", 48, "bold"),
+            fg="#FFFFFF",
+            bg=COLORS["dark"]["bg"]
+        )
+        title.pack()
+        
+        # Subtitle with custom font and transparent background
+        subtitle = tk.Label(
+            title_frame,
+            text="Your Personal Music Companion",
+            font=("Helvetica", 16),
+            fg="#B3B3B3",
+            bg=COLORS["dark"]["bg"]
+        )
+        subtitle.pack(pady=10)
+        
+        # Progress frame
+        progress_frame = ttk.Frame(self.loading_frame, style="Loading.TFrame")
+        progress_frame.place(relx=0.5, rely=0.8, anchor="center")
+        
+        self.loading_progress = ttk.Progressbar(
+            progress_frame,
+            style="LoadingBar.Horizontal.TProgressbar",
+            length=300,
+            mode="determinate"
+        )
+        self.loading_progress.pack(pady=10)
+        
+        # Status message with custom font and transparent background
+        self.loading_status = tk.Label(
+            progress_frame,
+            text="Starting up...",
+            font=("Helvetica", 12),
+            fg="#B3B3B3",
+            bg=COLORS["dark"]["bg"]
+        )
+        self.loading_status.pack()
+        
+        # Start animations
+        self._animate_logo()
         self.animate_loading_progress()
+        self.animate_loading_text()
+    
+    def _configure_loading_styles(self):
+        """Configure enhanced styles for loading screen."""
+        colors = COLORS["dark"]
+        
+        self.style.configure(
+            "Loading.TFrame",
+            background=colors["bg"]
+        )
+        
+        self.style.configure(
+            "LoadingTitle.TLabel",
+            background=colors["bg"],
+            foreground="#FFFFFF",
+            font=("Helvetica", 48, "bold")
+        )
+        
+        self.style.configure(
+            "LoadingSubtitle.TLabel",
+            background=colors["bg"],
+            foreground="#B3B3B3",
+            font=("Helvetica", 16)
+        )
+        
+        self.style.configure(
+            "LoadingStatus.TLabel",
+            background=colors["bg"],
+            foreground="#B3B3B3",
+            font=("Helvetica", 12)
+        )
+        
+        self.style.configure(
+            "LoadingBar.Horizontal.TProgressbar",
+            troughcolor=colors["secondary"],
+            background="#1DB954",
+            borderwidth=0,
+            thickness=6
+        )
+    
+    def _animate_logo(self):
+        """Animate the loading logo."""
+        if not hasattr(self, "logo_canvas") or not self.loading_frame.winfo_exists():
+            return
+            
+        angles = [0, 120, 240]
+        for item, angle in zip(self.logo_items, angles):
+            current_angle = float(self.logo_canvas.itemcget(item, "start"))
+            new_angle = (current_angle + 2) % 360
+            self.logo_canvas.itemconfig(item, start=new_angle)
+        
+        self.window.after(20, self._animate_logo)
+    
+    def animate_loading_progress(self):
+        """Animate loading progress with smooth transitions."""
+        if not hasattr(self, "loading_progress") or not self.loading_frame.winfo_exists():
+            return
+            
+        current = self.loading_progress["value"]
+        
+        if current < 100:
+            # Yumuşak hızlanma/yavaşlama
+            if current < 20:
+                increment = 0.3
+            elif current < 40:
+                increment = 0.8
+            elif current < 60:
+                increment = 1.2
+            elif current < 80:
+                increment = 0.8
+            else:
+                increment = 0.3
+                
+            self.loading_progress["value"] = current + increment
+            self.window.after(20, self.animate_loading_progress)
+        else:
+            self.loading_progress["value"] = 0
+    
+    def animate_loading_text(self):
+        """Animate loading status text."""
+        if not hasattr(self, "loading_status") or not self.loading_frame.winfo_exists():
+            return
+            
+        messages = [
+            "Preparing your musical journey...",
+            "Loading your favorites...",
+            "Tuning the experience...",
+            "Almost ready to rock...",
+            "Setting the stage..."
+        ]
+        
+        current_idx = getattr(self, "_loading_msg_idx", 0)
+        self.loading_status.config(text=messages[current_idx])
+        
+        self._loading_msg_idx = (current_idx + 1) % len(messages)
+        self.window.after(1500, self.animate_loading_text)
+    
+    def _configure_loading_styles(self):
+        """Configure enhanced styles for the loading screen."""
+        colors = COLORS["dark"]
+        accent = colors["accent"]
+        
+        # Frame style
+        self.style.configure(
+            "Loading.TFrame",
+            background=colors["bg"]
+        )
+        
+        # Logo style 
+        self.style.configure(
+            "LoadingLogo.TLabel",
+            background=colors["bg"],
+            foreground=accent
+        )
+        
+        # Title style
+        self.style.configure(
+            "LoadingTitle.TLabel",
+            background=colors["bg"],
+            foreground="#ffffff",
+            font=("Helvetica", 48, "bold")
+        )
+        
+        # Status text style
+        self.style.configure(
+            "LoadingStatus.TLabel",
+            background=colors["bg"],
+            foreground="#888888",
+            font=("Helvetica", 12)
+        )
+        
+        # Progress bar style
+        self.style.configure(
+            "LoadingBar.Horizontal.TProgressbar",
+            troughcolor=colors["secondary"],
+            background=accent,
+            borderwidth=0,
+            thickness=8
+        )
+    
+    def animate_loading_progress(self):
+        """Animate the loading progress bar with smooth transitions."""
+        if not hasattr(self, "loading_progress") or not self.loading_frame.winfo_exists():
+            return
+            
+        current = self.loading_progress["value"]
+        
+        if current < 100:
+            # Smooth acceleration at start
+            if current < 20:
+                increment = 0.5
+            # Regular speed in middle
+            elif current < 80:
+                increment = 1.5
+            # Slow down near end
+            else:
+                increment = 0.7
+                
+            self.loading_progress["value"] = current + increment
+            self.window.after(20, self.animate_loading_progress)
+        else:
+            self.loading_progress["value"] = 0
+    
+    def animate_loading_text(self):
+        """Animate the loading status text."""
+        if not hasattr(self, "loading_status") or not self.loading_frame.winfo_exists():
+            return
+            
+        messages = [
+            "Starting up...",
+            "Loading resources...", 
+            "Preparing your library...",
+            "Almost ready...",
+            "Launching BeatNest..."
+        ]
+        
+        current_idx = getattr(self, "_loading_msg_idx", 0)
+        self.loading_status.config(text=messages[current_idx])
+        
+        self._loading_msg_idx = (current_idx + 1) % len(messages)
+        self.window.after(1000, self.animate_loading_text)
 
     def _configure_loading_styles(self):
         """Configure styles for the loading screen."""
@@ -556,7 +804,7 @@ class BeatNest:
         """Update user level based on total listening time."""
         levels = [
             (0, "Listener"),
-            (3600, "Music"),
+            (3600, "Music Enthusiast"),
             (10800, "Melody Master"),
             (36000, "Harmony Hero"),
             (108000, "Symphony Star"),
@@ -1035,7 +1283,7 @@ class BeatNest:
             self._show_temp_message("Track already downloaded")
             return
         self._show_temp_message("Downloading...")
-        self.window.config(cursor="wait")
+        self.window.config(cursor="watch")  # Changed from "wait" to "watch"
         threading.Thread(target=self._download_and_save_track, args=(track,), daemon=True).start()
 
     def _download_and_save_track(self, track):
@@ -1443,40 +1691,69 @@ class BeatNest:
         add_btn.bind("<Enter>", lambda e: self._show_tooltip(e, "Add to selected playlist"))
         add_btn.bind("<Leave>", lambda e: self._hide_tooltip())
 
-    def _add_to_selected_playlist(self, track, playlist_name, new_playlist_name, dialog):
-        """Add a track to a selected or new playlist."""
+     
+    def _add_to_selected_playlist(self, track, selected_playlist, new_playlist_name, dialog):
+        """Add a track to the selected playlist or create a new one."""
+        if not selected_playlist and not new_playlist_name:
+            messagebox.showerror("Error", "Please select or create a playlist")
+            return
+        if new_playlist_name and new_playlist_name in self.playlists:
+            messagebox.showerror("Error", "Playlist already exists")
+            return
         if new_playlist_name:
-            new_playlist_name = new_playlist_name.strip()
-            if not new_playlist_name or len(new_playlist_name) > 50 or not re.match(r'^[a-zA-Z0-9\s_-]+$', new_playlist_name):
-                self._show_temp_message("Invalid playlist name")
-                dialog.destroy()
-                return
-            if new_playlist_name in self.playlists:
-                self._show_temp_message("Playlist already exists")
-                dialog.destroy()
-                return
             self.playlists[new_playlist_name] = []
-            playlist_name = new_playlist_name
-        if playlist_name:
-            if track not in self.playlists[playlist_name]:
-                self.playlists[playlist_name].append(track)
-                self.save_playlists()
-                self._show_temp_message(f"Added to {playlist_name}")
+            self.save_playlists()
+            selected_playlist = new_playlist_name
+        if track not in self.playlists[selected_playlist]:
+            self.playlists[selected_playlist].append(track)
+            self.save_playlists()
+            self._show_temp_message(f"Added to {selected_playlist}")
+            dialog.destroy()
+        else:
+            messagebox.showerror("Error", "Track already in playlist")
         dialog.destroy()
+
+    def add_to_playlist(self):
+        """Add current track to the current playlist."""
+        if not self.current_track:
+            self._show_temp_message("No track playing")
+            return
+        if not self.current_playlist:
+            self._show_temp_message("No playlist selected")
+            return
+        if self.current_track not in self.playlists[self.current_playlist]:
+            self.playlists[self.current_playlist].append(self.current_track)
+            self.save_playlists()
+            self._show_temp_message(f"Added to {self.current_playlist}")
+            self.show_playlist(self.current_playlist)
+        else:
+            self._show_temp_message("Track already in playlist")
 
     def remove_from_playlist(self, track=None):
         """Remove a track from the current playlist."""
         if not self.current_playlist:
             return
-        selection = self.tree.selection()
-        if not selection and not track:
+        
+        # If track is directly provided, remove it
+        if track:
+            if track in self.playlists[self.current_playlist]:
+                self.playlists[self.current_playlist].remove(track)
+                self.save_playlists()
+                self.show_playlist(self.current_playlist)
+                self._show_temp_message(f"Removed from {self.current_playlist}")
             return
-        selected_track = track or self.tracks[self.tree.index(selection[0])]
-        if selected_track in self.playlists[self.current_playlist]:
-            self.playlists[self.current_playlist].remove(selected_track)
-            self.save_playlists()
-            self.show_playlist(self.current_playlist)
-            self._show_temp_message(f"Removed from {self.current_playlist}")
+
+        # Otherwise try to get selection from tree if it exists
+        if hasattr(self, 'tree'):
+            selection = self.tree.selection()
+            if not selection:
+                return
+            selected_track = self.tracks[self.tree.index(selection[0])]
+            if selected_track in self.playlists[self.current_playlist]:
+                self.playlists[self.current_playlist].remove(selected_track)
+                self.save_playlists()
+                self.show_playlist(self.current_playlist)
+                self._show_temp_message(f"Removed from {self.current_playlist}")
 
     def sort_by_duration(self):
         """Sort tracks by duration."""
@@ -1491,7 +1768,6 @@ class BeatNest:
             self.tree.delete(*self.tree.get_children())
             for track in self.tracks:
                 self.tree.insert("end", values=(track[0], track[2], track[3], self.format_time(track[4])))
-        self.save_search_results()
         self._show_temp_message("Sorted by duration")
 
     def clear_search(self):
@@ -1515,7 +1791,7 @@ class BeatNest:
             self._show_temp_message("Please enter a search query")
             return
         self._show_temp_message("Searching...")
-        self.window.config(cursor="wait")
+        self.window.config(cursor="watch")  # Changed from "wait" to "watch"
         if query not in self.recent_searches:
             self.recent_searches.insert(0, query)
             if len(self.recent_searches) > 5:
@@ -1637,7 +1913,7 @@ class BeatNest:
     def stream_music(self, video_id):
         """Stream music from a YouTube video ID."""
         try:
-            self.window.config(cursor="wait")
+            self.window.config(cursor="watch")  # Changed from "wait" to "watch"
             audio_url = self._get_audio_url(video_id)
             if self.player:
                 self.player.stop()
@@ -1729,8 +2005,8 @@ class BeatNest:
             if self.shuffle_order:
                 index = self.shuffle_order.pop(0)
                 return self.playlists[self.current_playlist][index]
-        if self.playing_playlist_sequentially and self.current_playlist and self.playlists[self.current_playlist]:
-            current_index = self.playlists[self.current_playlist].index(self.current_track) if self.current_track in self.playlists[self.current_playlist] else -1
+            if self.playing_playlist_sequentially and self.current_playlist and self.playlists[self.current_playlist]:
+               current_index = self.playlists[self.current_playlist].index(self.current_track) if self.current_track in self.playlists[self.current_playlist] else -1
             if current_index + 1 < len(self.playlists[self.current_playlist]):
                 return self.playlists[self.current_playlist][current_index + 1]
         if self.from_playlist and self.current_playlist and self.playlists[self.current_playlist]:
