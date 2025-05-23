@@ -95,6 +95,8 @@ class BeatNest:
         self._load_data()
         self.show_loading_screen()
         self.window.after(2000, self._initialize_ui)
+        self.home_search_var = tk.StringVar()
+        self.search_var = tk.StringVar()
 
     def _setup_window(self):
         self.window.title(APP_TITLE)
@@ -400,14 +402,30 @@ class BeatNest:
         self.style.map("Horizontal.TScale", background=[("active", colors["hover"])])
 
     def _create_ui(self):
+        # Ana pencereyi grid ile iki satıra böl
+        self.window.grid_rowconfigure(0, weight=1)
+        self.window.grid_rowconfigure(1, weight=0)
+        self.window.grid_columnconfigure(0, weight=1)
+    
         self.main_frame = ttk.Frame(self.window)
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        self.main_frame.grid(row=0, column=0, sticky="nsew")
         self._create_sidebar()
         self.content_frame = ttk.Frame(self.main_frame)
         self.content_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=20, pady=20)
-        self._create_player_frame()
+        self._create_player_frame_grid()
+        self.show_home()
+        self._create_recommendation_bar()
+        self._create_player_frame_grid()
         self.show_home()
 
+
+    
+    def _create_player_frame_grid(self):
+        player_frame = ttk.Frame(self.window, style="TFrame")
+        player_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+        self._create_left_player_frame(player_frame)
+        self._create_center_player_frame(player_frame)
+        self._create_right_player_frame(player_frame)
     def _create_sidebar(self):
         sidebar = tk.Frame(self.main_frame, bg=COLORS["dark"]["bg"], width=220)
         sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
@@ -432,8 +450,10 @@ class BeatNest:
             btn.pack(fill=tk.X, pady=8, padx=16)
 
     def _create_player_frame(self):
+        # player_frame doğrudan self.window'a pack edilmeli
         player_frame = ttk.Frame(self.window, style="TFrame")
         player_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=10, padx=10)
+        # ...devamı aynı...
         self._create_left_player_frame(player_frame)
         self._create_center_player_frame(player_frame)
         self._create_right_player_frame(player_frame)
@@ -509,6 +529,51 @@ class BeatNest:
             foreground="#b3b3b3"
         )
         self.total_time_label.pack(side=tk.LEFT, padx=5)
+
+    def _create_recommendation_bar(self):
+            # Eğer varsa eski barı yok et
+            if hasattr(self, "recommendation_bar"):
+                self.recommendation_bar.destroy()
+            self.recommendation_bar = tk.Frame(self.window, bg=COLORS["dark"]["secondary"], height=70)
+            self.recommendation_bar.grid(row=1, column=0, sticky="ew")
+            # Önerilen şarkıları yükle
+            self._update_recommendation_bar()
+        
+    def _update_recommendation_bar(self):
+            for widget in self.recommendation_bar.winfo_children():
+                widget.destroy()
+            if not self.recommended_tracks:
+                return
+            tk.Label(
+                self.recommendation_bar,
+                text="Recommended:",
+                font=FONTS["track_info"],
+                bg=COLORS["dark"]["secondary"],
+                fg=COLORS["dark"]["accent"]
+            ).pack(side=tk.LEFT, padx=10)
+            for track in self.recommended_tracks[:3]:  # İlk 3 öneri
+                btn = tk.Button(
+                    self.recommendation_bar,
+                    text=track[0][:18] + ("..." if len(track[0]) > 18 else ""),
+                    font=FONTS["small"],
+                    bg=COLORS["dark"]["accent"],
+                    fg="#fff",
+                    bd=0,
+                    relief="flat",
+                    cursor="hand2",
+                    command=lambda t=track: self.play_recommended_track(t)
+                )
+                btn.pack(side=tk.LEFT, padx=5, pady=10)
+
+
+
+
+
+
+
+
+
+
 
     def _create_right_player_frame(self, player_frame):
         right_frame = ttk.Frame(player_frame, style="TFrame")
@@ -683,7 +748,7 @@ class BeatNest:
         search_container.pack(fill=tk.X, pady=(10, 20))
         search_entry = tk.Entry(
             search_container,
-            textvariable=self.search_var,
+            textvariable=self.home_search_var,  # <-- Burada değişti!
             font=("Segoe UI", 16),
             bg=COLORS["dark"]["secondary"],
             fg=COLORS["dark"]["fg"],
@@ -694,7 +759,8 @@ class BeatNest:
         )
         search_entry.pack(fill=tk.X, padx=30, pady=10, ipady=10)
         search_entry.bind("<KeyRelease>", self._home_search_suggestions)
-        search_entry.bind("<Return>", lambda e: self.search_music())
+        search_entry.bind("<Return>", lambda e: self._home_search_action())
+        # ...devamı aynı...
         search_btn = tk.Button(
             search_container,
             text="🔍",
@@ -727,14 +793,23 @@ class BeatNest:
             greeting.pack(pady=(0, 20), padx=30, anchor="w")
             self._generate_recommendations()
             self._display_recommended_tracks(self.content_frame)
+            self._update_recommendation_bar()
             ttk.Label(self.content_frame, text="Your Playlists", font=FONTS["subtitle"]).pack(anchor="w", pady=(30, 10), padx=30)
             playlist_frame = tk.Frame(self.content_frame, bg=COLORS["dark"]["bg"])
             playlist_frame.pack(fill=tk.X, padx=30)
             for name in self.playlists:
                 self._create_playlist_entry(playlist_frame, name)
         
+    def _home_search_action(self):
+            query = self.home_search_var.get().strip()
+            if query:
+                self._home_search_suggestions(None)
+
+
+
     def _home_search_suggestions(self, event):
-        query = self.search_var.get().strip()
+        query = self.home_search_var.get().strip()  # <-- Burada değişti!
+        # ...devamı aynı...
         # Sonuçlar frame'ini temizle
         for widget in self.home_search_results_frame.winfo_children():
             widget.destroy()
