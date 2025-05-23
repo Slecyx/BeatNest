@@ -68,6 +68,7 @@ SIDEBAR_BUTTONS = [
     {"text": "⭐ Favorites", "command": "show_favorites", "tooltip": "View favorite tracks"},
     {"text": "📚 Playlists", "command": "show_playlists", "tooltip": "Manage playlists"},
     {"text": "🎛 Mix", "command": "show_mix", "tooltip": "View your personal mix"},
+    {"text": "🧭 Keşfet", "command": "show_discover", "tooltip": "Discover trending tracks"},
     {"text": "📥 downloads", "command": "show_downloads", "tooltip": "View downloaded tracks"},
     {"text": "⚙️ Settings", "command": "show_settings", "tooltip": "Open settings"},
 ]
@@ -153,6 +154,7 @@ class BeatNest:
         self._load_json("downloads.json", lambda data: setattr(self, "downloads", [tuple(track) for track in data]), [])
         self._load_json("recommendations.json", self._load_recommendations, {"tracks": [], "play_counts": {}})
         self._load_json("search_results.json", lambda data: setattr(self, "tracks", [tuple(track) for track in data]), [])
+        self._load_json("followed_artists.json", lambda data: setattr(self, "followed_artists", set(data)), set())
         self._load_json("listening_history.json", lambda data: setattr(self, "listening_history", [tuple(track) for track in data]), [])
         self._load_json("recent_searches.json", lambda data: setattr(self, "recent_searches", data), [])
         self._load_json("listening_durations.json", lambda data: setattr(self, "listening_durations", data), {})
@@ -283,6 +285,11 @@ class BeatNest:
         else:
             self.loading_progress["value"] = 0
 
+    def save_followed_artists(self):
+            self._save_json("followed_artists.json", list(self.followed_artists))
+
+
+
     def animate_loading_text(self):
         if not hasattr(self, "loading_status") or not self.loading_frame.winfo_exists():
             return
@@ -297,6 +304,267 @@ class BeatNest:
         self.loading_status.config(text=messages[current_idx])
         self._loading_msg_idx = (current_idx + 1) % len(messages)
         self.window.after(1000, self.animate_loading_text)
+
+    def show_discover(self):
+        self._stop_discover_snippet()
+        self.clear_content()
+        self.discover_tracks = self._get_discover_tracks()
+        self.discover_index = 0
+        self._show_discover_track()
+    
+    def _show_discover_track(self):
+        # Önceki snippet çalmasını DÜZGÜN durdur
+        if hasattr(self, "discover_snippet_player") and self.discover_snippet_player:
+            try:
+                self.discover_snippet_player.stop()
+                self.discover_snippet_player.release()
+            except Exception:
+                pass
+            self.discover_snippet_player = None
+    
+        self.clear_content()
+        if not hasattr(self, "discover_tracks") or not self.discover_tracks:
+            ttk.Label(self.content_frame, text="No tracks to discover.", font=FONTS["title"]).pack(pady=40)
+            return
+        track = self.discover_tracks[self.discover_index]
+        # ...devamı aynı...
+    
+        # Kapak ortada büyük
+        cover_frame = tk.Frame(self.content_frame, bg=COLORS["dark"]["bg"])
+        cover_frame.pack(expand=True)
+        thumbnail_label = tk.Label(cover_frame, image=None, bg=COLORS["dark"]["bg"])
+        thumbnail_label.pack(pady=30)
+        self.load_thumbnail_for_track(track[5], thumbnail_label, size=(300, 300))
+        # Şarkının en ünlü kısmı (örnek: ilk 30 saniye)
+        ttk.Label(self.content_frame, text="En Ünlü Kısım", font=FONTS["subtitle"], foreground=COLORS["dark"]["accent"], background=COLORS["dark"]["bg"]).pack(pady=(0, 5))
+        self._play_snippet(track)
+    
+        # Sol altta sanatçı adı ve süre
+        info_frame = tk.Frame(self.content_frame, bg=COLORS["dark"]["bg"])
+        info_frame.pack(side=tk.LEFT, anchor="s", padx=40, pady=30)
+        tk.Label(info_frame, text=track[2], font=FONTS["track_title"], fg="#fff", bg=COLORS["dark"]["bg"]).pack(anchor="w")
+        tk.Label(info_frame, text=self.format_time(track[4]), font=FONTS["track_info"], fg="#b3b3b3", bg=COLORS["dark"]["bg"]).pack(anchor="w")
+    
+        # Sağ altta playlist'e ekle tuşu
+        btn_frame = tk.Frame(self.content_frame, bg=COLORS["dark"]["bg"])
+        btn_frame.pack(side=tk.RIGHT, anchor="se", padx=40, pady=30)
+        add_btn = tk.Button(
+            btn_frame, text="➕ Playlist’e Ekle", command=lambda t=track: self._show_add_to_playlist_dialog(t),
+            font=FONTS["button"], bg=COLORS["dark"]["accent"], fg="#fff",
+            bd=0, relief="flat", width=16, height=2, cursor="hand2"
+        )
+        add_btn.pack()
+    
+        # Klavye veya mouse ile aşağı/yukarı kaydırma
+        self.window.bind("<Down>", self._discover_next)
+        self.window.bind("<Up>", self._discover_prev)
+        self.window.bind("<MouseWheel>", self._discover_scroll)
+    
+    def _stop_discover_snippet(self):
+            if hasattr(self, "discover_snippet_player") and self.discover_snippet_player:
+                try:
+                    self.discover_snippet_player.stop()
+                    self.discover_snippet_player.release()
+                except Exception:
+                    pass
+                self.discover_snippet_player = None
+
+
+    def _get_discover_tracks(self, fetch_more=False):
+        # Dinleme geçmişinden en çok dinlenen tür ve sanatçıları bul
+        genre_counter = Counter()
+        artist_counter = Counter()
+        if self.ytmusic and self.listening_history:
+            for track in self.listening_history:
+                artist_counter[track[2]] += 1
+                try:
+                    song_info = self.ytmusic.get_song(track[1])
+                    genre = song_info.get("category") or song_info.get("genre")
+                    if genre:
+                        genre_counter[genre] += 1
+                except Exception:
+                    continue
+    
+        top_genres = [genre for genre, _ in genre_counter.most_common(3)]
+        top_artists = [artist for artist, _ in artist_counter.most_common(3)]
+        tracks = []
+        genre_counts = {}
+        artist_counts = {}
+    
+        # 1. En çok dinlediğin türlerde, farklı sanatçılardan öneri getir (her türden max 3)
+        for genre in top_genres:
+            try:
+                results = self.ytmusic.search(genre, filter="songs", limit=15 if fetch_more else 10)
+                for result in results:
+                    track = self._create_track_tuple(result)
+                    if not track or track in tracks or track in self.listening_history:
+                        continue
+                    # Tür ve sanatçı tekrarını sınırla
+                    genre_count = genre_counts.get(genre, 0)
+                    artist_count = artist_counts.get(track[2], 0)
+                    if genre_count >= 3 or artist_count >= 3:
+                        continue
+                    tracks.append(track)
+                    genre_counts[genre] = genre_count + 1
+                    artist_counts[track[2]] = artist_count + 1
+            except Exception:
+                continue
+    
+        # 2. En çok dinlediğin sanatçılardan yeni şarkılar öner (her sanatçıdan max 3)
+        for artist in top_artists:
+            try:
+                results = self.ytmusic.search(artist, filter="songs", limit=5)
+                for result in results:
+                    track = self._create_track_tuple(result)
+                    if not track or track in tracks or track in self.listening_history:
+                        continue
+                    artist_count = artist_counts.get(track[2], 0)
+                    if artist_count >= 3:
+                        continue
+                    tracks.append(track)
+                    artist_counts[track[2]] = artist_count + 1
+            except Exception:
+                continue
+    
+        # 3. Eğer hala azsa trending ile doldur
+        if len(tracks) < 20:
+            try:
+                results = self.ytmusic.search("trending", filter="songs", limit=10)
+                for result in results:
+                    track = self._create_track_tuple(result)
+                    if track and track not in tracks and track not in self.listening_history:
+                        tracks.append(track)
+            except Exception:
+                pass
+    
+        return tracks[:20]
+    
+        # 3. Eğer hala azsa trending ile doldur
+        if len(tracks) < 20:
+            try:
+                results = self.ytmusic.search("trending", filter="songs", limit=10)
+                for result in results:
+                    track = self._create_track_tuple(result)
+                    if track and track not in tracks and track not in self.listening_history:
+                        tracks.append(track)
+            except Exception:
+                pass
+    
+        return tracks[:20]
+
+    def _get_highlight_time(self, track):
+            # Genius API'dan highlight verse veya en popüler kısmı bulmaya çalış
+            try:
+                song = self.genius.search_song(track[0], track[2], get_full_info=True)
+                if song and hasattr(song, "highlighted_lyrics") and song.highlighted_lyrics:
+                    # Genius bazen highlighted_lyrics döndürür, burada zaman bilgisi olmayabilir
+                    # Eğer zaman bilgisi yoksa, lyrics içinde geçen kısmı bulup yaklaşık bir süre hesaplayabilirsin
+                    # Şimdilik lyrics'in ortasından başlat
+                    return int(track[4] // 2)
+            except Exception:
+                pass
+            # Bulamazsa şarkının ortasından başlat
+            return int(track[4] // 2)
+
+
+    def _discover_next(self, event=None):
+        if hasattr(self, "discover_tracks"):
+            if self.discover_index < len(self.discover_tracks) - 1:
+                self.discover_index += 1
+                self._show_discover_track()
+            else:
+                # Yeni öneriler çek
+                more_tracks = self._get_discover_tracks(fetch_more=True)
+                if more_tracks:
+                    self.discover_tracks.extend(more_tracks)
+                    self.discover_index += 1
+                    self._show_discover_track()
+    
+    def _discover_prev(self, event=None):
+        if hasattr(self, "discover_tracks") and self.discover_index > 0:
+            self.discover_index -= 1
+            self._show_discover_track()
+    
+    def _discover_scroll(self, event):
+        if event.delta < 0:
+            self._discover_next()
+        elif event.delta > 0:
+            self._discover_prev()
+    
+    def _play_snippet(self, track):
+        self._stop_discover_snippet()
+        def play():
+            try:
+                url = self._get_stream_url(track[1])
+                if not url:
+                    return
+                player = vlc.MediaPlayer(url)
+                volume = int(self.volume_slider.get()) if hasattr(self, "volume_slider") else 70
+                player.audio_set_volume(volume)
+                highlight_time = self._get_highlight_time(track)
+                player.play()
+                self.discover_snippet_player = player
+                # Şarkı başlar başlamaz highlight'a atla
+                for _ in range(10):
+                    time.sleep(0.2)
+                    if player.get_state() == vlc.State.Playing:
+                        player.set_time(highlight_time * 1000)
+                        break
+                def stop():
+                    player.stop()
+                    player.release()
+                self.window.after(30000, stop)
+            except Exception:
+                pass
+        threading.Thread(target=play, daemon=True).start()
+
+
+    def _create_discover_card(self, parent, track):
+            card = tk.Frame(parent, bg=COLORS["dark"]["card_bg"], bd=2, relief="ridge")
+            card.pack(fill=tk.BOTH, expand=True, pady=40, padx=250)
+            # Kapak ortada büyük
+            thumbnail_label = tk.Label(card, image=None, bg=COLORS["dark"]["card_bg"])
+            thumbnail_label.pack(pady=10)
+            self.load_thumbnail_for_track(track[5], thumbnail_label)
+            # Şarkı adı
+            tk.Label(card, text=track[0], font=FONTS["title"], fg="#fff", bg=COLORS["dark"]["card_bg"]).pack(pady=5)
+            # Sanatçı ve albüm
+            tk.Label(card, text=f"{track[2]} • {track[3]}", font=FONTS["track_info"], fg="#b3b3b3", bg=COLORS["dark"]["card_bg"]).pack()
+            # Süre
+            tk.Label(card, text=self.format_time(track[4]), font=FONTS["track_info"], fg="#b3b3b3", bg=COLORS["dark"]["card_bg"]).pack(pady=(0, 10))
+            # Butonlar
+            btn_frame = tk.Frame(card, bg=COLORS["dark"]["card_bg"])
+            btn_frame.pack(pady=10)
+            play_btn = tk.Button(
+                btn_frame, text="▶", command=lambda t=track: self.play_track(t),
+                font=FONTS["button"], bg=COLORS["dark"]["accent"], fg="#fff",
+                bd=0, relief="flat", width=6, height=2, cursor="hand2"
+            )
+            play_btn.pack(side=tk.LEFT, padx=10)
+            add_btn = tk.Button(
+                btn_frame, text="➕ Playlist’e Ekle", command=lambda t=track: self._show_add_to_playlist_dialog(t),
+                font=FONTS["button"], bg=COLORS["dark"]["secondary"], fg="#fff",
+                bd=0, relief="flat", width=16, height=2, cursor="hand2"
+            )
+            add_btn.pack(side=tk.LEFT, padx=10)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def _initialize_ui(self):
         self.loading_frame.destroy()
@@ -448,6 +716,25 @@ class BeatNest:
                 cursor="hand2"
             )
             btn.pack(fill=tk.X, pady=8, padx=16)
+    
+        # Bildirim butonunu ekle (🔔)
+        self.notification_btn = tk.Button(
+            sidebar,
+            text="🔔 0",
+            command=self.show_notifications,
+            font=FONTS["button"],
+            bg=COLORS["dark"]["secondary"],
+            fg=COLORS["dark"]["fg"],
+            activebackground=COLORS["dark"]["accent"],
+            activeforeground="#fff",
+            bd=0,
+            relief="flat",
+            height=2,
+            width=20,
+            highlightthickness=0,
+            cursor="hand2"
+        )
+        self.notification_btn.pack(fill=tk.X, pady=8, padx=16)
 
     def _create_player_frame(self):
         # player_frame doğrudan self.window'a pack edilmeli
@@ -540,6 +827,8 @@ class BeatNest:
             self._update_recommendation_bar()
         
     def _update_recommendation_bar(self):
+            if not hasattr(self, "recommendation_bar") or not self.recommendation_bar.winfo_exists():
+                return
             for widget in self.recommendation_bar.winfo_children():
                 widget.destroy()
             if not self.recommended_tracks:
@@ -742,6 +1031,7 @@ class BeatNest:
         event.widget.configure(background=COLORS["dark" if self.is_dark_mode else "light"]["bg"])
 
     def show_home(self):
+        self._stop_discover_snippet()
         self.clear_content()
         # Arama barı
         search_container = tk.Frame(self.content_frame, bg=COLORS["dark"]["bg"])
@@ -1027,20 +1317,20 @@ class BeatNest:
         play_btn.bind("<Enter>", lambda e: self._show_tooltip(e, "Play this track"))
         play_btn.bind("<Leave>", lambda e: self._hide_tooltip())
 
-    def load_thumbnail_for_track(self, url, label):
+    def load_thumbnail_for_track(self, url, label, size=(60, 60)):
         if not url:
             self.window.after(0, lambda: label.config(image=None) if label.winfo_exists() else None)
             return
         try:
-            if url not in self.image_cache:
+            cache_key = (url, size)
+            if cache_key not in self.image_cache:
                 response = requests.get(url, timeout=5)
                 img_data = BytesIO(response.content)
-                img = Image.open(img_data).resize((60, 60), Image.LANCZOS)
+                img = Image.open(img_data).resize(size, Image.LANCZOS)
                 photo = ImageTk.PhotoImage(img)
-                self.image_cache[url] = photo
+                self.image_cache[cache_key] = photo
                 self.image_references.append(photo)
-            # Ana thread'de ve label hâlâ varsa güncelle
-            self.window.after(0, lambda: label.config(image=self.image_cache[url]) if label.winfo_exists() else None)
+            self.window.after(0, lambda: label.config(image=self.image_cache[cache_key]) if label.winfo_exists() else None)
         except Exception:
             self.window.after(0, lambda: label.config(image=None) if label.winfo_exists() else None)
 
@@ -1280,6 +1570,61 @@ class BeatNest:
         add_playlist_btn.pack(side=tk.LEFT, padx=2)
         add_playlist_btn.bind("<Enter>", lambda e: self._show_tooltip(e, "Playlist'e ekle"))
         add_playlist_btn.bind("<Leave>", lambda e: self._hide_tooltip())
+
+    def show_followed_artists(self):
+        self.clear_content()
+        ttk.Label(self.content_frame, text="Takip Edilen Sanatçılar", font=FONTS["title"]).pack(pady=20)
+        if not hasattr(self, "followed_artists") or not self.followed_artists:
+            ttk.Label(self.content_frame, text="Hiç sanatçı takip etmiyorsun.", font=FONTS["label"]).pack(pady=10)
+            return
+    
+        # Scrollable frame oluştur
+        canvas = tk.Canvas(self.content_frame, bg=COLORS["dark"]["bg"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.content_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas, style="TFrame")
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+    
+        sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+            client_id=SPOTIFY_CLIENT_ID,
+            client_secret=SPOTIFY_CLIENT_SECRET
+        ))
+        for artist_id in list(self.followed_artists):
+            try:
+                artist = sp.artist(artist_id)
+                frame = tk.Frame(scrollable_frame, bg=COLORS["dark"]["bg"])
+                frame.pack(fill=tk.X, pady=5, padx=20)
+                # Sanatçı görseli
+                image_url = artist.get("images", [{}])[0].get("url", "")
+                thumbnail_label = ttk.Label(frame, image=None, background=COLORS["dark"]["bg"])
+                thumbnail_label.pack(side=tk.LEFT, padx=10)
+                if image_url:
+                    threading.Thread(target=self.load_thumbnail_for_track, args=(image_url, thumbnail_label, (60, 60)), daemon=True).start()
+                # Bilgi
+                info_frame = ttk.Frame(frame)
+                info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                ttk.Label(info_frame, text=artist["name"], font=FONTS["track_title"], foreground="#ffffff", anchor="w").pack(anchor="w")
+                ttk.Label(info_frame, text=f"Türler: {', '.join(artist.get('genres', []))}", font=FONTS["track_info"], foreground="#b3b3b3", anchor="w").pack(anchor="w")
+                ttk.Label(info_frame, text=f"Takipçi: {artist.get('followers', {}).get('total', 0)}", font=FONTS["small"], foreground="#b3b3b3", anchor="w").pack(anchor="w")
+                ttk.Label(info_frame, text=f"Popülerlik: {artist.get('popularity', 0)}", font=FONTS["small"], foreground="#b3b3b3", anchor="w").pack(anchor="w")
+                ttk.Label(info_frame, text=f"Spotify ID: {artist_id}", font=FONTS["small"], foreground="#b3b3b3", anchor="w").pack(anchor="w")
+                # Takipten çık butonu
+                unfollow_btn = ttk.Button(
+                    frame,
+                    text="Takipten Çık",
+                    style="Rounded.TButton",
+                    command=lambda a_id=artist_id: self._unfollow_artist(a_id)
+                )
+                unfollow_btn.pack(side=tk.RIGHT, padx=10)
+            except Exception:
+                continue
+
 
     def show_favorites(self):
         self.clear_content()
@@ -2085,23 +2430,42 @@ class BeatNest:
             if len(self.recent_searches) > 10:
                 self.recent_searches.pop()
             self.save_recent_searches()
-        self.loading_label.config(text="Searching...")
+        # --- BURADA KONTROL EKLE ---
+        if hasattr(self, "loading_label") and self.loading_label.winfo_exists():
+            self.loading_label.config(text="Searching...")
         self.window.config(cursor="watch")
         threading.Thread(target=self._perform_search, args=(query,), daemon=True).start()
 
     def _perform_search(self, query):
         try:
-            results = self.ytmusic.search(query, filter=self.search_filter.get(), limit=20)
-            tracks = []
-            for result in results:
-                if not isinstance(result, dict):
-                    continue
-                track = self._create_track_tuple(result)
-                if track and track not in tracks:
-                    tracks.append(track)
-            self.tracks = tracks
-            self.save_search_results()
-            self.window.after(0, self._update_search_results)
+            filter_type = self.search_filter.get()
+            results = []
+            # Şarkı sonuçları (YouTube Music)
+            if filter_type in ("songs", "albums"):
+                yt_results = self.ytmusic.search(query, filter=filter_type, limit=10)
+                for item in yt_results:
+                    track = self._create_track_tuple(item)
+                    if track:
+                        results.append(("song", track))
+            # Sanatçı sonuçları (Spotify)
+            if filter_type in ("artists", "songs", "albums"):
+                sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+                    client_id=SPOTIFY_CLIENT_ID,
+                    client_secret=SPOTIFY_CLIENT_SECRET
+                ))
+                sp_results = sp.search(q=query, type="artist", limit=5)
+                for artist in sp_results.get("artists", {}).get("items", []):
+                    # (tip, (isim, id, tür, takipçi, görsel, takip_ediliyor_mu))
+                    results.append(("artist", (
+                        artist.get("name", "Unknown"),
+                        artist.get("id", ""),
+                        ", ".join(artist.get("genres", [])),
+                        artist.get("followers", {}).get("total", 0),
+                        artist.get("images", [{}])[0].get("url", ""),
+                        False  # Takip ediliyor mu
+                    )))
+            self.tracks = results
+            self.window.after(0, self._populate_mixed_results)
         except Exception as e:
             self.window.after(0, lambda: self._show_temp_message(f"Search failed: {str(e)}"))
         finally:
@@ -2115,6 +2479,189 @@ class BeatNest:
         self.search_var.set("")
         self.tracks = []
         self._populate_search_results()
+
+    def _populate_mixed_results(self):
+            for widget in self.search_results_frame.winfo_children():
+                widget.destroy()
+            if not self.tracks:
+                ttk.Label(self.search_results_frame, text="Sonuç bulunamadı.", font=FONTS["label"]).pack(anchor="w", pady=10)
+                return
+            for item_type, data in self.tracks:
+                if item_type == "song":
+                    self._create_search_track_frame(self.search_results_frame, data)
+                elif item_type == "artist":
+                    self._create_artist_detail_frame(self.search_results_frame, data)
+        
+    def _create_artist_detail_frame(self, parent, artist):
+            frame = tk.Frame(parent, bg=COLORS["dark" if self.is_dark_mode else "light"]["bg"], bd=1, relief="solid")
+            frame.pack(fill=tk.X, pady=2, padx=5)
+            # Sanatçı görseli
+            image_url = artist[4]
+            thumbnail_label = ttk.Label(frame, image=None, background=COLORS["dark" if self.is_dark_mode else "light"]["bg"])
+            thumbnail_label.pack(side=tk.LEFT, padx=10)
+            if image_url:
+                threading.Thread(target=self.load_thumbnail_for_track, args=(image_url, thumbnail_label), daemon=True).start()
+            # Bilgi
+            info_frame = ttk.Frame(frame)
+            info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            ttk.Label(info_frame, text=artist[0], font=FONTS["track_title"], foreground="#ffffff", anchor="w").pack(anchor="w")
+            ttk.Label(info_frame, text=f"Türler: {artist[2]}", font=FONTS["track_info"], foreground="#b3b3b3", anchor="w").pack(anchor="w")
+            ttk.Label(info_frame, text=f"Takipçi: {artist[3]}", font=FONTS["small"], foreground="#b3b3b3", anchor="w").pack(anchor="w")
+            # Takip Et butonu
+            btn_frame = ttk.Frame(frame)
+            btn_frame.pack(side=tk.RIGHT, padx=5)
+            follow_btn = ttk.Button(
+                btn_frame,
+                text="Takip Et" if not artist[5] else "Takipten Çık",
+                command=lambda a=artist: self._toggle_follow_artist(a, follow_btn),
+                width=12,
+                style="Rounded.TButton"
+            )
+            follow_btn.pack(side=tk.LEFT, padx=2)
+            # Detaylar butonu
+            detail_btn = ttk.Button(
+                btn_frame,
+                text="Detaylar",
+                command=lambda a=artist: self._show_artist_details(a),
+                width=10,
+                style="Rounded.TButton"
+            )
+            detail_btn.pack(side=tk.LEFT, padx=2)
+        
+    def _toggle_follow_artist(self, artist, btn):
+        if not hasattr(self, "followed_artists"):
+            self.followed_artists = set()
+        if artist[1] in self.followed_artists:
+            self.followed_artists.remove(artist[1])
+            btn.config(text="Takip Et")
+            self._show_temp_message(f"{artist[0]} takipten çıkarıldı")
+        else:
+            self.followed_artists.add(artist[1])
+            btn.config(text="Takipten Çık")
+            self._show_temp_message(f"{artist[0]} takip edildi")
+        self.save_followed_artists()
+    
+    def _unfollow_artist(self, artist_id):
+        if hasattr(self, "followed_artists") and artist_id in self.followed_artists:
+            self.followed_artists.remove(artist_id)
+            self.save_followed_artists()
+            self._show_temp_message("Takipten çıkıldı")
+            self.show_followed_artists()
+        
+    def _show_artist_details(self, artist):
+        dialog = tk.Toplevel(self.window)
+        dialog.title(f"{artist[0]} Detaylar")
+        dialog.geometry("500x400")
+        dialog.transient(self.window)
+        dialog.grab_set()
+        dialog.configure(bg=COLORS["dark" if self.is_dark_mode else "light"]["bg"])
+        ttk.Label(dialog, text=artist[0], font=FONTS["title"]).pack(pady=10)
+        sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+            client_id=SPOTIFY_CLIENT_ID,
+            client_secret=SPOTIFY_CLIENT_SECRET
+        ))
+        try:
+            artist_info = sp.artist(artist[1])
+            ttk.Label(dialog, text=f"Türler: {', '.join(artist_info.get('genres', []))}", font=FONTS["track_info"]).pack(pady=5)
+            ttk.Label(dialog, text=f"Takipçi: {artist_info.get('followers', {}).get('total', 0)}", font=FONTS["track_info"]).pack(pady=5)
+            ttk.Label(dialog, text=f"Popülerlik: {artist_info.get('popularity', 0)}", font=FONTS["track_info"]).pack(pady=5)
+            ttk.Label(dialog, text=f"Spotify ID: {artist[1]}", font=FONTS["track_info"]).pack(pady=5)
+            if artist_info.get("images"):
+                img_label = ttk.Label(dialog)
+                img_label.pack(pady=10)
+                threading.Thread(target=self.load_thumbnail_for_track, args=(artist_info["images"][0]["url"], img_label, (120, 120)), daemon=True).start()
+            # Son çıkan albüm/single
+            albums = sp.artist_albums(artist[1], album_type="single", limit=1)
+            if albums.get("items"):
+                album = albums["items"][0]
+                ttk.Label(dialog, text=f"Son Single: {album.get('name', '')} ({album.get('release_date', '')})", font=FONTS["track_info"]).pack(pady=5)
+        except Exception:
+            ttk.Label(dialog, text="Spotify'dan detaylar alınamadı.", font=FONTS["track_info"]).pack(pady=5)
+        ttk.Button(dialog, text="Kapat", command=dialog.destroy, style="Rounded.TButton").pack(pady=10)
+
+
+    def show_notifications(self):
+        self.clear_content()
+        ttk.Label(self.content_frame, text="Yeni Şarkı Bildirimleri", font=FONTS["title"]).pack(pady=20)
+        btn = ttk.Button(
+            self.content_frame,
+            text="Takip Edilen Sanatçılar",
+            style="Rounded.TButton",
+            command=self.show_followed_artists
+        )
+        btn.pack(pady=10)
+        if not hasattr(self, "notifications") or not self.notifications:
+            ttk.Label(self.content_frame, text="Hiç yeni şarkı bildirimi yok.", font=FONTS["label"]).pack(pady=10)
+            return
+        for notif in self.notifications:
+            ttk.Label(self.content_frame, text=notif, font=FONTS["track_info"]).pack(anchor="w", padx=20, pady=2)
+        
+    def check_new_releases(self):
+            # Takip edilen sanatçılar için yeni şarkı kontrolü (örnek)
+            if not hasattr(self, "followed_artists") or not self.followed_artists:
+                return
+            if not hasattr(self, "notifications"):
+                self.notifications = []
+            sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+                client_id=SPOTIFY_CLIENT_ID,
+                client_secret=SPOTIFY_CLIENT_SECRET
+            ))
+            for artist_id in self.followed_artists:
+                results = sp.artist_albums(artist_id, album_type="single", limit=1)
+                items = results.get("items", [])
+                if items:
+                    album = items[0]
+                    title = album.get("name", "")
+                    release_date = album.get("release_date", "")
+                    notif = f"Yeni şarkı: {title} ({release_date})"
+                    if notif not in self.notifications:
+                        self.notifications.append(notif)
+            # Bildirim butonuna sayı ekle
+            if hasattr(self, "notification_btn"):
+                self.notification_btn.config(text=f"🔔 {len(self.notifications)}")
+
+
+
+    def _populate_artist_results(self):
+            for widget in self.search_results_frame.winfo_children():
+                widget.destroy()
+            if not self.tracks:
+                ttk.Label(self.search_results_frame, text="Sanatçı bulunamadı.", font=FONTS["label"]).pack(anchor="w", pady=10)
+                return
+            for artist in self.tracks:
+                self._create_artist_result_frame(self.search_results_frame, artist)
+        
+    def _create_artist_result_frame(self, parent, artist):
+            frame = tk.Frame(parent, bg=COLORS["dark" if self.is_dark_mode else "light"]["bg"], bd=1, relief="solid")
+            frame.pack(fill=tk.X, pady=2, padx=5)
+            # Sanatçı görseli
+            image_url = artist[4]
+            thumbnail_label = ttk.Label(frame, image=None, background=COLORS["dark" if self.is_dark_mode else "light"]["bg"])
+            thumbnail_label.pack(side=tk.LEFT, padx=10)
+            if image_url:
+                threading.Thread(target=self.load_thumbnail_for_track, args=(image_url, thumbnail_label), daemon=True).start()
+            # Bilgi
+            info_frame = ttk.Frame(frame)
+            info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            ttk.Label(info_frame, text=artist[0], font=FONTS["track_title"], foreground="#ffffff", anchor="w").pack(anchor="w")
+            ttk.Label(info_frame, text=f"Türler: {artist[2]}", font=FONTS["track_info"], foreground="#b3b3b3", anchor="w").pack(anchor="w")
+            ttk.Label(info_frame, text=f"Takipçi: {artist[3]}", font=FONTS["small"], foreground="#b3b3b3", anchor="w").pack(anchor="w")
+            # Spotify'da aç butonu
+            btn_frame = ttk.Frame(frame)
+            btn_frame.pack(side=tk.RIGHT, padx=5)
+            open_btn = ttk.Button(
+                btn_frame,
+                text="Spotify'da Aç",
+                command=lambda: os.startfile(f"https://open.spotify.com/artist/{artist[1]}"),
+                width=12,
+                style="Rounded.TButton"
+            )
+            open_btn.pack(side=tk.LEFT, padx=2)
+
+
+
+
+
 
     def stream_music(self, video_id):
         try:
