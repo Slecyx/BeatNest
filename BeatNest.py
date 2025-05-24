@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from ytmusicapi import YTMusic
 import yt_dlp
+import uuid
 import vlc
 import threading
 import time
@@ -9,6 +10,7 @@ from PIL import Image, ImageTk
 import requests
 from io import BytesIO
 import random
+import itertools
 import json
 import os
 import re
@@ -29,36 +31,37 @@ APP_TITLE = "BeatNest 🎵"
 WINDOW_SIZE = "1000x700"
 COLORS = {
     "dark": {
-        "bg": "#191414",
-        "fg": "#FFFFFF",
-        "accent": "#1DB954",
-        "secondary": "#222326",
-        "hover": "#282828",
-        "button_bg": "#1DB954",
-        "button_fg": "#FFFFFF",
-        "button_active_bg": "#1ed760",
-        "card_bg": "#232323",
-        "card_shadow": "#101010",
+        "bg": "#23272F",           # Ana arka plan
+        "fg": "#F5F6FA",           # Ana yazı rengi
+        "accent": "#4F8CFF",       # Modern mavi accent
+        "secondary": "#2D313A",    # Kart/ikincil arka plan
+        "hover": "#353B48",        # Hover rengi
+        "button_bg": "#4F8CFF",    # Buton arka planı
+        "button_fg": "#FFFFFF",    # Buton yazı rengi
+        "button_active_bg": "#3574E6", # Aktif buton
+        "card_bg": "#262A34",      # Kart arka planı
+        "card_shadow": "#1A1D23",  # Kart gölgesi
     },
     "light": {
-        "bg": "#f5f5f5",
-        "fg": "#191414",
-        "accent": "#1DB954",
-        "secondary": "#e0e0e0",
-        "hover": "#d0d0d0",
-        "button_bg": "#1DB954",
+        "bg": "#F5F6FA",
+        "fg": "#23272F",
+        "accent": "#4F8CFF",
+        "secondary": "#FFFFFF",
+        "hover": "#E6E9F0",
+        "button_bg": "#4F8CFF",
         "button_fg": "#FFFFFF",
-        "button_active_bg": "#1ed760",
-        "card_bg": "#ffffff",
-        "card_shadow": "#cccccc",
+        "button_active_bg": "#3574E6",
+        "card_bg": "#FFFFFF",
+        "card_shadow": "#D1D9E6",
     }
 }
+
 FONTS = {
     "title": ("Segoe UI", 28, "bold"),
     "subtitle": ("Segoe UI", 20, "bold"),
     "label": ("Segoe UI", 12),
-    "button": ("Segoe UI", 11, "bold"),
-    "track_title": ("Segoe UI", 14, "bold"),
+    "button": ("Segoe UI Semibold", 12),
+    "track_title": ("Segoe UI Semibold", 14),
     "track_info": ("Segoe UI", 12),
     "small": ("Segoe UI", 9),
 }
@@ -600,24 +603,12 @@ class BeatNest:
             borderwidth=0,
             padding=8,
             font=FONTS["button"],
-            relief="flat",
-            bordercolor=colors["secondary"],
-            borderradius=10
+            relief="flat"
         )
         self.style.map(
             "Rounded.TButton",
             background=[("active", colors["button_active_bg"])],
             foreground=[("active", colors["button_fg"])]
-        )
-        self.style.configure(
-            "Search.TEntry",
-            padding=12,
-            font=("Helvetica", 14),
-            fieldbackground=colors["secondary"],
-            foreground=colors["fg"],
-            relief="flat",
-            bordercolor=colors["accent"],
-            borderradius=20
         )
         self.style.configure(
             "TLabel",
@@ -1508,6 +1499,8 @@ class BeatNest:
             self._create_search_track_frame(self.search_results_frame, track)
     
     def _create_search_track_frame(self, parent, track):
+        if not isinstance(track,(list, tuple)) or len(track) < 6:
+            return
         frame = tk.Frame(parent, bg=COLORS["dark" if self.is_dark_mode else "light"]["bg"], bd=1, relief="solid")
         frame.pack(fill=tk.X, pady=2, padx=5)  # Daha küçük padding
         # ...devamı aynı...
@@ -1713,7 +1706,6 @@ class BeatNest:
         dialog.title("Import Playlist")
         dialog.geometry("500x320")
         dialog.transient(self.window)
-        dialog.grab_set()
         dialog.configure(bg=COLORS["dark" if self.is_dark_mode else "light"]["bg"])
         
         ttk.Label(dialog, text="Import Playlist", font=FONTS["subtitle"]).pack(pady=10)
@@ -2000,7 +1992,7 @@ class BeatNest:
         self.current_playlist = name
         ttk.Label(self.content_frame, text=name, font=FONTS["title"]).pack(anchor="w", pady=(0, 20))
         canvas, scrollable_frame = self._create_scrollable_frame()
-        self.tracks = self.playlists[name]
+        self.tracks = self.playlists[name]["tracks"]
         for track in self.tracks:
             self._create_playlist_track_frame(scrollable_frame, track)
         button_frame = ttk.Frame(self.content_frame)
@@ -2014,6 +2006,8 @@ class BeatNest:
         self.loading_label.pack(pady=5)
 
     def _create_playlist_track_frame(self, parent, track):
+        if not isinstance(track,(list,tuple)) or len(track) < 6:
+            return
         card = tk.Frame(
             parent,
             bg=COLORS["dark"]["card_bg"],
@@ -2070,12 +2064,25 @@ class BeatNest:
             {"text": "➕ Add Current to Playlist", "command": self.add_to_playlist, "tooltip": "Add current track to playlist"},
             {"text": "📥 Download All", "command": lambda: self.download_playlist(name), "tooltip": "Download all tracks in playlist"},
             {"text": "Sort by Duration", "command": self.sort_by_duration, "tooltip": "Sort tracks by duration"},
+            {"text": "🔗 Share Playlist", "command": lambda: self.share_playlist(name), "tooltip": "Copy playlist share link"},
         ]
         for btn_config in buttons:
             btn = ttk.Button(parent, text=btn_config["text"], command=btn_config["command"], style="Rounded.TButton")
             btn.pack(side=tk.LEFT, padx=5)
             btn.bind("<Enter>", lambda e, t=btn_config["tooltip"]: self._show_tooltip(e, t))
             btn.bind("<Leave>", lambda e: self._hide_tooltip())
+
+
+    def share_playlist(self, name):
+            playlist = self.playlists.get(name)
+            if not playlist or "id" not in playlist:
+                self._show_temp_message("Playlist not found")
+                return
+            # Basit bir paylaşım linki oluştur
+            share_link = f"beatnest://playlist/{playlist['id']}"
+            pyperclip.copy(share_link)
+            self._show_temp_message("Playlist link copied!")
+
 
     def show_settings(self):
         self.clear_content()
@@ -2310,11 +2317,20 @@ class BeatNest:
             messagebox.showerror("Error", "Playlist already exists")
             return
         if new_playlist_name:
-            self.playlists[new_playlist_name] = []
+            playlist_id = str(uuid.uuid4())
+            self.playlists[new_playlist_name] = {"id": playlist_id, "tracks": []}
             self.save_playlists()
             selected_playlist = new_playlist_name
-        if track not in self.playlists[selected_playlist]:
-            self.playlists[selected_playlist].append(track)
+        # --- DÜZELTME ---
+        playlist = self.playlists[selected_playlist]
+        if isinstance(playlist, list):
+            # Eski formatı dönüştür
+            playlist_id = str(uuid.uuid4())
+            self.playlists[selected_playlist] = {"id": playlist_id, "tracks": playlist}
+            playlist = self.playlists[selected_playlist]
+            self.save_playlists()
+        if track not in playlist["tracks"]:
+            playlist["tracks"].append(track)
             self.save_playlists()
             self._show_temp_message(f"Added to {selected_playlist}")
             dialog.destroy()
@@ -2660,6 +2676,27 @@ class BeatNest:
 
 
 
+        
+    def _add_new_playlist(self, playlist_name, dialog):
+            playlist_name = playlist_name.strip()
+            if not playlist_name:
+                messagebox.showerror("Error", "Playlist name cannot be empty")
+                return
+            if len(playlist_name) > 50 or not re.match(r'^[a-zA-Z0-9\s_-]+$', playlist_name):
+                messagebox.showerror("Error", "Invalid playlist name")
+                dialog.destroy()
+                return
+            if playlist_name in self.playlists:
+                messagebox.showerror("Error", "Playlist already exists")
+                dialog.destroy()
+                return
+            # UUID ekle
+            playlist_id = str(uuid.uuid4())
+            self.playlists[playlist_name] = {"id": ..., "tracks": [...]}
+            self.save_playlists()
+            self.show_playlists()
+            dialog.destroy()
+
 
 
 
@@ -2884,22 +2921,71 @@ class BeatNest:
             self.loading_label.config(text=message)
             self.window.after(duration, lambda: self.loading_label.config(text=""))
 
+        # ...existing code...
+    
+  
+    
     def show_lyrics(self):
         if not self.current_track:
             self._show_temp_message("No track playing")
             return
         dialog = tk.Toplevel(self.window)
         dialog.title("Lyrics")
-        dialog.geometry("400x500")
+        dialog.geometry("500x600")
         dialog.transient(self.window)
-        dialog.grab_set()
+        # dialog.grab_set()  # Bu satırı kaldırın!
         dialog.configure(bg=COLORS["dark" if self.is_dark_mode else "light"]["bg"])
         ttk.Label(dialog, text=f"{self.current_track[0]} - {self.current_track[2]}", font=FONTS["track_title"]).pack(pady=10)
-        lyrics_text = tk.Text(dialog, height=20, width=50, bg=COLORS["dark" if self.is_dark_mode else "light"]["secondary"], fg=COLORS["dark" if self.is_dark_mode else "light"]["fg"], font=FONTS["label"])
-        lyrics_text.pack(pady=10, padx=10)
-        lyrics_text.config(state="normal")
-        lyrics_text.delete(1.0, tk.END)
-        threading.Thread(target=self._fetch_lyrics, args=(self.current_track[0], self.current_track[2], lyrics_text, dialog), daemon=True).start()
+        # Karaoke paneli - SCROLLABLE
+        canvas = tk.Canvas(dialog, bg=COLORS["dark" if self.is_dark_mode else "light"]["secondary"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=canvas.yview)
+        lyrics_frame = tk.Frame(canvas, bg=COLORS["dark" if self.is_dark_mode else "light"]["secondary"])
+        lyrics_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=lyrics_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+        scrollbar.pack(side="right", fill="y")
+        self.lyrics_labels = []
+        self.lyrics_highlight_idx = 0
+        # Sözleri çek
+        threading.Thread(target=self._fetch_lyrics_karaoke, args=(self.current_track[0], self.current_track[2], lyrics_frame, dialog), daemon=True).start()
+    def _fetch_lyrics_karaoke(self, title, artist, frame, dialog):
+            try:
+                song = self.genius.search_song(title, artist, get_full_info=False)
+                if song and song.lyrics:
+                    lyrics_lines = [line for line in song.lyrics.split("\n") if line.strip()]
+                    self.window.after(0, lambda: self._display_karaoke_lyrics(lyrics_lines, frame, dialog))
+                else:
+                    self.window.after(0, lambda: tk.Label(frame, text="Lyrics not found", bg=frame["bg"], fg="#fff").pack())
+            except Exception:
+                self.window.after(0, lambda: tk.Label(frame, text="Failed to fetch lyrics", bg=frame["bg"], fg="#fff").pack())
+    
+    def _display_karaoke_lyrics(self, lines, frame, dialog):
+            for widget in frame.winfo_children():
+                widget.destroy()
+            self.lyrics_labels = []
+            for line in lines:
+                lbl = tk.Label(frame, text=line, anchor="w", justify="left", font=FONTS["label"], bg=frame["bg"], fg="#fff")
+                lbl.pack(anchor="w")
+                self.lyrics_labels.append(lbl)
+            self.lyrics_highlight_idx = 0
+            self._karaoke_highlight(dialog)
+    
+    def _karaoke_highlight(self, dialog):
+            # Basit: Her 2 saniyede bir sonraki satırı vurgula (zaman kodu yoksa)
+            if not hasattr(self, "lyrics_labels") or not self.lyrics_labels or not dialog.winfo_exists():
+                return
+            for i, lbl in enumerate(self.lyrics_labels):
+                lbl.config(fg="#fff")
+            if self.lyrics_highlight_idx < len(self.lyrics_labels):
+                self.lyrics_labels[self.lyrics_highlight_idx].config(fg=COLORS["dark"]["accent"])
+                self.lyrics_highlight_idx += 1
+                self.window.after(2000, lambda: self._karaoke_highlight(dialog))
+    
+    # ...existing code...
 
     def _fetch_lyrics(self, title, artist, text_widget, dialog):
         try:
